@@ -1,0 +1,9 @@
+
+build/
+release/
+third_party/
+logs/
+*.log
+*.tar.gz
+*.tgz
+  
