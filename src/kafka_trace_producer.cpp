@@ -178,7 +178,7 @@ void KafkaTraceProducer::setConfOrThrow(
     rd_kafka_conf_t* conf,
     const char* name,
     bool value) {
-  setConfOrThrow(conf, name, value ? "true" : "false");
+  setConfOrThrow(conf, name, std::string(value ? "true" : "false"));
 }
 
 void KafkaTraceProducer::setConfOrThrow(
