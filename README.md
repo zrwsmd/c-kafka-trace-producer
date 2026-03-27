@@ -115,4 +115,5 @@ The build also generates a native consumer example:
 ## Detailed Guide
 
 See docs/deployment-guide.md
+See docs/amd64-build-and-deploy.md
   
