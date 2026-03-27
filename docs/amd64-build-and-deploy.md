@@ -1,58 +1,58 @@
-# AMD64 Build And Deploy Guide
+# AMD64 编译与部署指南
 
-This document is the step-by-step guide for building, packaging, and running
-the native Kafka trace producer on an AMD64 Linux machine.
+这份文档用于说明如何在 AMD64 Linux 机器上编译、打包并运行原生版
+Kafka Trace Producer。
 
-It is based on the current verified workflow on:
+本文档基于当前已经验证通过的环境整理：
 
-- Architecture: `x86_64`
-- OS: Debian 12
-- glibc: 2.36
+- 架构：`x86_64`
+- 操作系统：Debian 12
+- glibc：2.36
 
-Important:
+请先注意几点：
 
-- This guide is for AMD64 validation and deployment only.
-- The generated binaries from this guide are `x86_64` binaries.
-- They cannot be copied directly to an ARM64 industrial PC.
-- The broker-side Kafka scripts do not need to be executed again if your Kafka
-  server is already running normally.
+- 这份文档只适用于 AMD64 环境的编译验证和部署。
+- 按本文步骤生成的二进制是 `x86_64` 版本。
+- 这个产物不能直接拷到 ARM64 工控机上运行。
+- 如果你的 Kafka broker 端已经部署完成并验证通过，就不需要再次执行
+  `deploy/broker/` 下面的脚本。
 
-## 1. Goal
+## 1. 目标
 
-Use an AMD64 Linux server to:
+在一台 AMD64 Linux 服务器上完成下面这些事情：
 
-1. pull the latest native project code
-2. build the native producer and consumer
-3. package the runtime folder under `release/amd64`
-4. run the producer locally to verify the full Kafka send flow
+1. 拉取最新代码
+2. 编译原生 producer 和 consumer
+3. 打包生成 `release/amd64`
+4. 在本机启动 producer，验证 Kafka 发送链路是否正常
 
-## 2. Paths Used In This Guide
+## 2. 本文档使用的目录
 
-This document assumes the project lives at:
+本文默认项目目录为：
 
 ```bash
 /opt/c-kafka-trace-producer
 ```
 
-If your path is different, replace it consistently in the commands below.
+如果你的实际目录不同，请把下面命令中的路径统一替换掉。
 
-## 3. Pull The Latest Code
+## 3. 拉取最新代码
 
-If the repo has not been cloned yet:
+如果仓库还没有 clone：
 
 ```bash
 cd /opt
 git clone https://github.com/zrwsmd/c-kafka-trace-producer.git
 ```
 
-Then always update to the latest version before building:
+然后每次编译前都先更新到最新版本：
 
 ```bash
 cd /opt/c-kafka-trace-producer
 git pull
 ```
 
-## 4. Add Execute Permission To Scripts
+## 4. 给脚本加执行权限
 
 ```bash
 cd /opt/c-kafka-trace-producer
@@ -61,9 +61,9 @@ chmod +x deploy/device/*.sh
 chmod +x deploy/broker/*.sh
 ```
 
-## 5. Install Build Dependencies
+## 5. 安装编译依赖
 
-On Debian 12 as `root`:
+如果你当前是 Debian 12 的 `root` 用户，直接执行：
 
 ```bash
 apt update
@@ -86,31 +86,31 @@ apt install -y \
   librdkafka-dev
 ```
 
-If you are not `root`, add `sudo` in front of `apt`.
+如果你不是 `root`，就在 `apt` 前面加上 `sudo`。
 
-## 6. Check Or Update Runtime Config
+## 6. 检查或修改运行配置
 
-The runtime config file is:
+运行配置文件在：
 
 ```bash
 /opt/c-kafka-trace-producer/config/application.properties
 ```
 
-Print the current config:
+先打印当前配置：
 
 ```bash
 cd /opt/c-kafka-trace-producer
 cat config/application.properties
 ```
 
-If you want to update the broker address:
+如果你要修改 broker 地址，可以执行：
 
 ```bash
 sed -i 's#^kafka.bootstrap.servers=.*#kafka.bootstrap.servers=47.129.128.147:9092#' config/application.properties
 cat config/application.properties
 ```
 
-At minimum, confirm these values:
+至少要确认下面这些值是否正确：
 
 ```properties
 kafka.bootstrap.servers=47.129.128.147:9092
@@ -120,23 +120,23 @@ trace.max.frames=1000000
 trace.send.interval.ms=100
 ```
 
-## 7. Configure The Build Directory
+## 7. 配置构建目录
 
-Use a dedicated AMD64 build directory:
+建议单独使用 AMD64 的构建目录：
 
 ```bash
 cd /opt/c-kafka-trace-producer
 cmake -S . -B build/amd64-release -DCMAKE_BUILD_TYPE=Release
 ```
 
-## 8. Build The Native Binaries
+## 8. 编译原生二进制
 
 ```bash
 cd /opt/c-kafka-trace-producer
 cmake --build build/amd64-release --parallel "$(nproc)"
 ```
 
-## 9. Verify The Build Output
+## 9. 检查编译结果
 
 ```bash
 cd /opt/c-kafka-trace-producer
@@ -145,51 +145,51 @@ file build/amd64-release/c-kafka-trace-producer
 file build/amd64-release/c-kafka-trace-consumer
 ```
 
-Expected result:
+正常情况下你应该看到类似：
 
 ```bash
 ELF 64-bit LSB pie executable, x86-64
 ```
 
-## 10. Package The Runtime Folder
+## 10. 打包运行目录
 
-Use the generated packaging script and point it at the AMD64 build directory:
+使用项目里的打包脚本，并明确指定 AMD64 的构建输出目录：
 
 ```bash
 cd /opt/c-kafka-trace-producer
 ./scripts/package-release.sh "$PWD/build/amd64-release" "$PWD/release/amd64"
 ```
 
-When it succeeds, you should see a message like:
+成功后一般会看到类似输出：
 
 ```bash
 Runtime package created at:
   /opt/c-kafka-trace-producer/release/amd64
 ```
 
-## 11. Verify The Runtime Package
+## 11. 检查打包结果
 
 ```bash
 cd /opt/c-kafka-trace-producer
 find release/amd64 -maxdepth 3 -type f | sort
 ```
 
-You should see files under:
+正常应该能看到这些目录下的文件：
 
 - `release/amd64/bin`
 - `release/amd64/lib`
 - `release/amd64/config`
 - `release/amd64/deploy/device`
 
-## 12. First Run: Use Foreground Verification
+## 12. 第一次运行：先以前台方式验证
 
-Important:
+这里非常重要：
 
-- The first verification run should be done in the foreground.
-- Do not start with `deploy/device/start.sh`.
-- Use the executable directly first so the logs are easier to read.
+- 第一次验证时一定先以前台方式运行
+- 不要一上来就直接用 `deploy/device/start.sh`
+- 先直接跑二进制本体，日志最清楚，方便定位问题
 
-Run:
+执行：
 
 ```bash
 cd /opt/c-kafka-trace-producer/release/amd64
@@ -197,9 +197,9 @@ unset LD_LIBRARY_PATH
 ./bin/c-kafka-trace-producer ./config/application.properties
 ```
 
-## 13. What Normal Startup Looks Like
+## 13. 正常启动时应该看到什么
 
-Expected startup log shape:
+正常情况下，启动日志大致会是这样：
 
 ```text
 === Native Kafka Trace Producer ===
@@ -214,12 +214,12 @@ Expected startup log shape:
 [2026-xx-xx xx:xx:xx] [TraceSimulator] progress: 1.0% ...
 ```
 
-If you see `progress: 1.0%`, `2.0%`, `3.0%` and so on, the producer is already
-sending data to Kafka successfully.
+如果你已经看到 `progress: 1.0%`、`2.0%`、`3.0%` 这种日志，就说明
+producer 已经在正常向 Kafka 发送数据了。
 
-## 14. Validate Consumption
+## 14. 验证消费
 
-Open another terminal and run the native consumer:
+另开一个终端，运行原生 consumer：
 
 ```bash
 cd /opt/c-kafka-trace-producer/release/amd64
@@ -227,15 +227,14 @@ unset LD_LIBRARY_PATH
 ./bin/c-kafka-trace-consumer 47.129.128.147:9092 trace-data
 ```
 
-Note:
+注意：
 
-- The consumer does not print every single message.
-- It prints progress every 1000 batches.
+- 这个 consumer 不会每条消息都打印
+- 它默认每 1000 个 batch 才打印一次进度
 
-## 15. Background Run After Foreground Validation
+## 15. 前台验证通过后，再切后台运行
 
-Once the foreground run is confirmed healthy, you can use the deployment
-scripts:
+当前台运行确认没有问题后，再使用部署脚本：
 
 ```bash
 cd /opt/c-kafka-trace-producer/release/amd64
@@ -244,15 +243,15 @@ cd /opt/c-kafka-trace-producer/release/amd64
 ./deploy/device/tail-log.sh
 ```
 
-Stop the background process with:
+停止后台进程：
 
 ```bash
 ./deploy/device/stop.sh
 ```
 
-## 16. Create A Tar Package
+## 16. 打成 tar 包
 
-If you want to archive the AMD64 runtime package:
+如果你想把 AMD64 运行目录打成压缩包：
 
 ```bash
 cd /opt/c-kafka-trace-producer
@@ -260,22 +259,22 @@ tar -czf c-kafka-trace-producer-amd64.tar.gz -C release amd64
 ls -lh c-kafka-trace-producer-amd64.tar.gz
 ```
 
-## 17. Copy To Another AMD64 Linux Machine
+## 17. 拷到另一台 AMD64 Linux 机器运行
 
-Create the archive:
+先在当前机器打包：
 
 ```bash
 cd /opt/c-kafka-trace-producer
 tar -czf c-kafka-trace-producer-amd64.tar.gz -C release amd64
 ```
 
-Copy it:
+然后拷过去：
 
 ```bash
 scp c-kafka-trace-producer-amd64.tar.gz root@TARGET_IP:/opt/
 ```
 
-Extract and run on the target AMD64 machine:
+在目标 AMD64 机器上解压并运行：
 
 ```bash
 mkdir -p /opt/c-kafka-trace-producer-release
@@ -289,15 +288,15 @@ unset LD_LIBRARY_PATH
 ./bin/c-kafka-trace-producer ./config/application.properties
 ```
 
-## 18. Common Notes
+## 18. 常见说明
 
-- The broker-side scripts under `deploy/broker/` are not needed again if Kafka
-  has already been deployed and verified.
-- The AMD64 package generated from this guide is for `x86_64` only.
-- The first run should always use the foreground executable directly.
-- After verification, you can switch to `deploy/device/start.sh`.
+- 如果 Kafka broker 已经部署并验证通过，就不用再执行 `deploy/broker/`
+  下面的脚本。
+- 按本文打出来的 AMD64 包只适用于 `x86_64` 环境。
+- 第一次运行一定优先直接跑前台二进制。
+- 确认稳定以后，再切换到 `deploy/device/start.sh` 后台运行。
 
-## 19. One-Paste Quick Version
+## 19. 一次性可复制执行的快捷版本
 
 ```bash
 cd /opt
