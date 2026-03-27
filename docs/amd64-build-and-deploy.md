@@ -323,3 +323,79 @@ cd release/amd64
 unset LD_LIBRARY_PATH
 ./bin/c-kafka-trace-producer ./config/application.properties
 ```
+
+## 20. 修改 application.properties 之后要做什么
+
+如果你修改的是源码目录下的配置文件：
+
+```bash
+/opt/c-kafka-trace-producer/config/application.properties
+```
+
+也就是仓库里的这个文件：
+
+- `config/application.properties`
+
+那么结论是：
+
+- 不需要重新编译
+- 需要重新打包
+- 需要重启程序
+
+原因是：
+
+- 程序实际运行时读取的是打包目录下的配置文件
+- 打包目录中的配置文件来自源码目录复制
+- 所以源码目录里的配置改完后，必须重新打包一次，才能把新配置同步到
+  `release/amd64/config/application.properties`
+
+### 20.1 不需要重新执行的步骤
+
+只改配置文件时，不需要重新执行下面这些命令：
+
+```bash
+cmake -S . -B build/amd64-release -DCMAKE_BUILD_TYPE=Release
+cmake --build build/amd64-release --parallel "$(nproc)"
+```
+
+### 20.2 需要执行的步骤
+
+在源码目录修改完配置后，执行：
+
+```bash
+cd /opt/c-kafka-trace-producer
+./scripts/package-release.sh "$PWD/build/amd64-release" "$PWD/release/amd64"
+```
+
+### 20.3 前台运行时怎么生效
+
+如果你是以前台方式验证运行，那么重新打包后，直接重新执行：
+
+```bash
+cd /opt/c-kafka-trace-producer/release/amd64
+unset LD_LIBRARY_PATH
+./bin/c-kafka-trace-producer ./config/application.properties
+```
+
+### 20.4 后台运行时怎么生效
+
+如果你是通过 `deploy/device` 的脚本后台运行，那么重新打包后，执行：
+
+```bash
+cd /opt/c-kafka-trace-producer/release/amd64
+./deploy/device/stop.sh
+./deploy/device/start.sh
+```
+
+### 20.5 一句话总结
+
+如果你修改的是：
+
+- `/opt/c-kafka-trace-producer/config/application.properties`
+
+那么后续只需要：
+
+1. 重新打包
+2. 重启程序
+
+不需要重新编译。
