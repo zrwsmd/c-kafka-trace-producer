@@ -55,12 +55,14 @@ void KafkaTraceProducer::sendSync(const std::string& key, const std::string& val
   }
 
   DeliveryContext context;
+  void* key_data = key.empty() ? nullptr : const_cast<char*>(key.data());
+  void* value_data = value.empty() ? nullptr : const_cast<char*>(value.data());
   const rd_kafka_resp_err_t error = rd_kafka_producev(
       producer_,
       RD_KAFKA_V_TOPIC(topic_.c_str()),
       RD_KAFKA_V_MSGFLAGS(RD_KAFKA_MSG_F_COPY),
-      RD_KAFKA_V_KEY(key.data(), key.size()),
-      RD_KAFKA_V_VALUE(value.data(), value.size()),
+      RD_KAFKA_V_KEY(key_data, key.size()),
+      RD_KAFKA_V_VALUE(value_data, value.size()),
       RD_KAFKA_V_OPAQUE(&context),
       RD_KAFKA_V_END);
 
