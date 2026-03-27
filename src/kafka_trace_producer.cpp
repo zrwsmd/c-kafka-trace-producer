@@ -1,6 +1,7 @@
 
 #include "kafka_trace_producer.h"
 
+#include <cstdio>
 #include <iostream>
 #include <stdexcept>
 
@@ -10,6 +11,8 @@ KafkaTraceProducer::KafkaTraceProducer(const TraceConfig& config)
     : config_(config), topic_(config.topic) {
   char error_buffer[512] = {0};
   rd_kafka_conf_t* conf = rd_kafka_conf_new();
+
+  std::cout << "[KafkaProducer] creating Kafka config..." << std::endl;
 
   rd_kafka_conf_set_dr_msg_cb(conf, &KafkaTraceProducer::deliveryReportCallback);
   rd_kafka_conf_set_log_cb(conf, &KafkaTraceProducer::logCallback);
@@ -28,7 +31,9 @@ KafkaTraceProducer::KafkaTraceProducer(const TraceConfig& config)
   setConfOrThrow(conf, "socket.keepalive.enable", true);
   setConfOrThrow(conf, "client.id", std::string("c-kafka-trace-producer"));
 
+  std::cout << "[KafkaProducer] calling rd_kafka_new..." << std::endl;
   producer_ = rd_kafka_new(RD_KAFKA_PRODUCER, conf, error_buffer, sizeof(error_buffer));
+  std::cout << "[KafkaProducer] rd_kafka_new returned" << std::endl;
   if (producer_ == nullptr) {
     rd_kafka_conf_destroy(conf);
     throw std::runtime_error(std::string("failed to create Kafka producer: ") + error_buffer);
@@ -146,7 +151,8 @@ void KafkaTraceProducer::logCallback(
     const char* facility,
     const char* message) {
   if (level <= 3) {
-    std::cerr << "[librdkafka][" << facility << "] " << message << std::endl;
+    std::fprintf(stderr, "[librdkafka][%s] %s\n", facility, message);
+    std::fflush(stderr);
   }
 }
 
