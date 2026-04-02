@@ -7,6 +7,7 @@ OUTPUT_DIR="${2:-${PROJECT_ROOT}/release/arm64}"
 
 PRODUCER_BIN="${BUILD_DIR}/c-kafka-trace-producer"
 CONSUMER_BIN="${BUILD_DIR}/c-kafka-trace-consumer"
+PROBE_BIN="${BUILD_DIR}/c-kafka-rdkafka-probe"
 
 if [[ ! -x "${PRODUCER_BIN}" ]]; then
   echo "Producer binary not found: ${PRODUCER_BIN}"
@@ -20,11 +21,18 @@ if [[ ! -x "${CONSUMER_BIN}" ]]; then
   exit 1
 fi
 
+if [[ ! -x "${PROBE_BIN}" ]]; then
+  echo "Probe binary not found: ${PROBE_BIN}"
+  echo "Run a build script first."
+  exit 1
+fi
+
 rm -rf "${OUTPUT_DIR}"
 mkdir -p "${OUTPUT_DIR}/bin" "${OUTPUT_DIR}/config" "${OUTPUT_DIR}/lib" "${OUTPUT_DIR}/deploy"
 
 cp "${PRODUCER_BIN}" "${OUTPUT_DIR}/bin/"
 cp "${CONSUMER_BIN}" "${OUTPUT_DIR}/bin/"
+cp "${PROBE_BIN}" "${OUTPUT_DIR}/bin/"
 cp "${PROJECT_ROOT}/config/application.properties" "${OUTPUT_DIR}/config/"
 cp -R "${PROJECT_ROOT}/deploy/device" "${OUTPUT_DIR}/deploy/"
 
@@ -58,6 +66,7 @@ copy_runtime_libraries() {
 
 copy_runtime_libraries "${PRODUCER_BIN}"
 copy_runtime_libraries "${CONSUMER_BIN}"
+copy_runtime_libraries "${PROBE_BIN}"
 
 if [[ -n "${RDKAFKA_ROOT:-}" && -d "${RDKAFKA_ROOT}/lib" ]]; then
   find "${RDKAFKA_ROOT}/lib" -maxdepth 1 -type f \( -name "librdkafka.so*" -o -name "librdkafka++.so*" \)     -exec cp -L {} "${OUTPUT_DIR}/lib/" \;
@@ -74,6 +83,9 @@ Contents:
 
 Manual start:
   ./deploy/device/start.sh
+
+Validate librdkafka on the target:
+  ./bin/c-kafka-rdkafka-probe --require ssl,sasl
 
 Install as service:
   sudo ./deploy/device/install-service.sh /opt/c-kafka-trace-producer

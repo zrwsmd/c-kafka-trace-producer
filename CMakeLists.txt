@@ -12,6 +12,11 @@ find_package(Threads REQUIRED)
 
 set(RDKAFKA_ROOT "" CACHE PATH "Path to a local librdkafka install prefix")
 
+if(CMAKE_CROSSCOMPILING AND NOT RDKAFKA_ROOT)
+  message(FATAL_ERROR
+    "Cross-compilation requires RDKAFKA_ROOT to point at an ARM64 librdkafka install prefix.")
+endif()
+
 function(resolve_rdkafka_target out_target)
   if(RDKAFKA_ROOT)
     set(_include_dir "${RDKAFKA_ROOT}/include")
@@ -97,7 +102,22 @@ target_link_libraries(c-kafka-trace-consumer
     Threads::Threads
 )
 
-install(TARGETS c-kafka-trace-producer c-kafka-trace-consumer
+add_executable(c-kafka-rdkafka-probe
+  src/rdkafka_probe.cpp
+)
+
+target_include_directories(c-kafka-rdkafka-probe
+  PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+)
+
+target_link_libraries(c-kafka-rdkafka-probe
+  PRIVATE
+    ${RDKAFKA_TARGET}
+    Threads::Threads
+)
+
+install(TARGETS c-kafka-trace-producer c-kafka-trace-consumer c-kafka-rdkafka-probe
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 

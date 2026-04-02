@@ -73,6 +73,24 @@ Use this if you do not want to rely on a system-wide librdkafka installation on 
 ./scripts/package-release.sh
 ```
 
+### Option C: Cross-build on Windows x86_64 with an AArch64 SDK
+
+Use this when your host is Windows x86_64 and you have:
+
+- an `aarch64-none-linux-gnu` cross toolchain with sysroot
+- an ARM64 `librdkafka` install prefix
+- `cmake` plus `ninja` in `PATH`
+
+Run:
+
+```powershell
+.\scripts\validate-arm64-toolchain-windows.ps1 -ToolchainRoot C:\path\to\toolchain
+.\scripts\build-arm64-cross-windows.ps1 -ToolchainRoot C:\path\to\toolchain -RdkafkaRoot C:\path\to\rdkafka-arm64
+.\scripts\package-release-cross-windows.ps1 -ToolchainRoot C:\path\to\toolchain -RdkafkaRoot C:\path\to\rdkafka-arm64
+```
+
+The detailed Buildroot deployment guide, including Windows cross-build notes, is in `docs/arm64-build-and-deploy.md`.
+
 ## Deploy To The Industrial PC
 
 After packaging, copy the generated `release/arm64` folder to the industrial PC, then:
@@ -110,6 +128,20 @@ The build also generates a native consumer example:
 
 ```bash
 ./build/arm64-release/c-kafka-trace-consumer 47.129.128.147:9092 trace-data
+```
+
+## librdkafka Probe
+
+The build also generates a minimal `librdkafka` probe executable. Use it on the target device to verify:
+
+- the shared library loads successfully
+- `rd_kafka_new()` succeeds
+- required builtin features are present
+
+Example:
+
+```bash
+./build/arm64-release/c-kafka-rdkafka-probe --require ssl,sasl
 ```
 
 ## Detailed Guide
