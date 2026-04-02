@@ -102,6 +102,31 @@ $CC --print-sysroot
 
 当前工具链的 sysroot 里包含运行时库，但缺少部分开发期链接文件。为了让 `configure` 和后续链接顺利通过，需要单独准备一个本地 shim 目录。
 
+这里的 shim 可以理解为一层“本地兼容垫片”，作用不是替换原始库，而是给链接器补齐它想找的库名。
+
+例如：
+
+- 当编译参数里出现 `-lpthread` 时，链接器会优先查找 `libpthread.so` 或 `libpthread.a`
+- 但当前工具链的 sysroot 里实际只有 `libpthread.so.0`
+- 因此 `configure` 做线程库探测时会报 `cannot find -lpthread`
+
+`libdl`、`libm`、`librt` 的处理逻辑也是一样。当前做法是把 sysroot 中已经存在的目标库复制到一个单独目录里，并改成开发期链接常用的名字，让编译器可以通过 `-L$DEVLIB` 先找到这些库。
+
+这些文件都不是额外下载的，而是直接来自当前交叉编译器自带的 sysroot：
+
+- `libpthread.so` 来源于 `$SYSROOT/lib64/libpthread.so.0`
+- `libdl.so` 来源于 `$SYSROOT/lib64/libdl.so.2`
+- `libm.so` 来源于 `$SYSROOT/lib64/libm.so.6`
+- `librt.so` 来源于 `$SYSROOT/usr/lib64/librt.so`
+
+之所以使用单独的 `toolchain-shim` 目录，而不是直接修改原工具链目录，主要是为了：
+
+- 不破坏原始交叉编译器目录
+- 方便回退和复现
+- 让当前项目的编译依赖更清晰
+
+如果后续你拿到了 Buildroot 自己生成的完整 `staging/sysroot`，通常可以优先直接使用那套 sysroot，因为它一般会自带更完整的开发头文件、链接脚本和库文件。
+
 在 Git Bash 中执行：
 
 ```bash
