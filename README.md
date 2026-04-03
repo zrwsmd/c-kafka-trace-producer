@@ -169,5 +169,6 @@ If your ARM64 `librdkafka` was built without `ssl` or `sasl`, do not require tho
 
 See `docs/arm64-build-and-deploy.md`
 See `docs/librdkafka-arm64-cross-build.md`
+See `docs/buildroot-target-deploy-and-run.md`
 See `docs/amd64-build-and-deploy.md`
   
