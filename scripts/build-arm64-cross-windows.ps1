@@ -56,6 +56,14 @@ $ToolchainFile = Resolve-FullPath -PathValue (Join-Path $ProjectRoot 'cmake\tool
 $AdditionalIncludeDirs = $AdditionalIncludeDirs | Where-Object { $_ }
 $AdditionalLibraryDirs = $AdditionalLibraryDirs | Where-Object { $_ }
 
+if ($AdditionalLibraryDirs.Count -eq 0) {
+    $defaultShimDir = Join-Path $ProjectRoot 'build\toolchain-shim'
+    & (Join-Path $PSScriptRoot 'prepare-arm64-toolchain-shim-windows.ps1') `
+        -ToolchainRoot $ToolchainRoot `
+        -OutputDir $defaultShimDir | Out-Null
+    $AdditionalLibraryDirs = @($defaultShimDir)
+}
+
 if (-not $SkipToolchainProbe) {
     & (Join-Path $PSScriptRoot 'validate-arm64-toolchain-windows.ps1') `
         -ToolchainRoot $ToolchainRoot `
@@ -63,8 +71,12 @@ if (-not $SkipToolchainProbe) {
         -AdditionalLibraryDirs $AdditionalLibraryDirs
 }
 
+if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
+    throw "cmake.exe was not found in PATH. Install CMake or use scripts\build-arm64-cross-windows-direct.ps1."
+}
+
 if ($Generator -eq 'Ninja' -and -not (Get-Command ninja -ErrorAction SilentlyContinue)) {
-    throw "Generator 'Ninja' was requested, but ninja.exe was not found in PATH."
+    throw "Generator 'Ninja' was requested, but ninja.exe was not found in PATH. Install Ninja or use scripts\build-arm64-cross-windows-direct.ps1."
 }
 
 New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null

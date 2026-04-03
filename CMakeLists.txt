@@ -1,11 +1,10 @@
-
 cmake_minimum_required(VERSION 3.16)
 
-project(c_kafka_trace_producer VERSION 1.0.0 LANGUAGES CXX)
+project(c_kafka_trace_producer VERSION 1.0.0 LANGUAGES C)
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS OFF)
 
 include(GNUInstallDirs)
 find_package(Threads REQUIRED)
@@ -60,11 +59,19 @@ endfunction()
 
 resolve_rdkafka_target(RDKAFKA_TARGET)
 
+set(TRACE_COMMON_LIBS
+  ${RDKAFKA_TARGET}
+  Threads::Threads
+  m
+  ${CMAKE_DL_LIBS}
+  rt
+)
+
 add_library(trace_common
-  src/properties.cpp
-  src/trace_config.cpp
-  src/kafka_trace_producer.cpp
-  src/trace_simulator.cpp
+  src/properties.c
+  src/trace_config.c
+  src/kafka_trace_producer.c
+  src/trace_simulator.c
 )
 
 target_include_directories(trace_common
@@ -74,21 +81,17 @@ target_include_directories(trace_common
 
 target_link_libraries(trace_common
   PUBLIC
-    ${RDKAFKA_TARGET}
-    Threads::Threads
-    m
+    ${TRACE_COMMON_LIBS}
 )
 
 add_executable(c-kafka-trace-producer
-  src/main.cpp
+  src/main.c
 )
 
 target_link_libraries(c-kafka-trace-producer PRIVATE trace_common)
 
 add_executable(c-kafka-trace-consumer
-  src/simple_consumer.cpp
-  src/properties.cpp
-  src/trace_config.cpp
+  src/simple_consumer.c
 )
 
 target_include_directories(c-kafka-trace-consumer
@@ -98,12 +101,11 @@ target_include_directories(c-kafka-trace-consumer
 
 target_link_libraries(c-kafka-trace-consumer
   PRIVATE
-    ${RDKAFKA_TARGET}
-    Threads::Threads
+    ${TRACE_COMMON_LIBS}
 )
 
 add_executable(c-kafka-rdkafka-probe
-  src/rdkafka_probe.cpp
+  src/rdkafka_probe.c
 )
 
 target_include_directories(c-kafka-rdkafka-probe
@@ -113,8 +115,7 @@ target_include_directories(c-kafka-rdkafka-probe
 
 target_link_libraries(c-kafka-rdkafka-probe
   PRIVATE
-    ${RDKAFKA_TARGET}
-    Threads::Threads
+    ${TRACE_COMMON_LIBS}
 )
 
 install(TARGETS c-kafka-trace-producer c-kafka-trace-consumer c-kafka-rdkafka-probe
@@ -124,4 +125,3 @@ install(TARGETS c-kafka-trace-producer c-kafka-trace-consumer c-kafka-rdkafka-pr
 install(FILES config/application.properties
   DESTINATION config
 )
-  

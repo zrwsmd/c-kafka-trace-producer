@@ -1,294 +1,92 @@
-# ARM64 / Buildroot aarch64 构建与部署指南
+# ARM64 / Buildroot 构建与部署指南（当前 C 版本）
 
-本文档适用于这类目标设备：
+本文档面向下面这类环境：
 
-- `uname -m` 为 `aarch64`
-- 系统是 Buildroot，例如 `Buildroot 2018.02-rc3`
-- 目标机主要负责“运行成品”，不适合承担完整编译工作
+- 目标设备是 `aarch64` Linux
+- 目标系统是 Buildroot，适合运行成品，不适合在设备上完整编译
+- 开发主机是 Windows x86_64
+- 你已经有一套 `aarch64-none-linux-gnu` 交叉工具链
+- 你已经有一份单独编好的 ARM64 `librdkafka`
 
-这份文档同时覆盖两条构建路径：
+当前项目已经从 C++ 迁成纯 C。对你当前这套工具链来说，这个变化很关键，因为现在项目本身不再依赖 ARM64 `libstdc++`。
 
-1. 在 ARM64 Linux 构建机上原生编译
-2. 在 Windows x86_64 主机上使用 `aarch64` 交叉工具链交叉编译
+## 1. 当前结论
 
-如果你的目标机就是你当前这台 Buildroot 设备，最重要的结论先放前面：
+- 当前仓库已经可以直接生成 ARM64 Linux 可执行文件。
+- 已经验证通过的交叉构建产物是：
+  - `build/arm64-cross-release/c-kafka-trace-producer`
+  - `build/arm64-cross-release/c-kafka-trace-consumer`
+  - `build/arm64-cross-release/c-kafka-rdkafka-probe`
+- 已经验证过的打包产物是：
+  - `release/arm64`
+  - `c-kafka-trace-producer-arm64.tar.gz`
+- 这套流程依赖外部 ARM64 `librdkafka`，不需要把 `librdkafka` 源码整个拷进当前项目。
 
-- 目标机不要执行 `git clone`、`apt install`
-- 目标机只负责接收 `tar.gz`、解压、改配置、运行
-- 如果在 `x86_64` 主机上直接运行仓库里的 `build-arm64-native.sh`，产物仍然会是 `x86_64`，不能在目标机上运行
-- 交叉编译时必须同时具备：
-  - `aarch64` 交叉编译工具链
-  - 对应的 `sysroot`
-  - ARM64 版本的 `librdkafka`
+## 2. 你当前环境里用到的关键路径
 
-## 1. 目录约定
+以下路径是当前已经跑通的一套示例：
 
-本文档默认：
+- 项目根目录：`E:\wulianwnag\c-kafka-trace-producer`
+- ARM64 交叉工具链：`E:\VSCode-win32-x64-1.85.1\data\extensions\undefined_publisher.devuni-ide-vscode-0.0.1\tool\iec-runtime-gen-run\gcc-arm-10.3-aarch64-none-linux-gnu`
+- 外部 ARM64 `librdkafka` 安装前缀：`E:\wulianwnag\testkafka\output`
+- 本地 shim 库目录：`E:\wulianwnag\c-kafka-trace-producer\build\toolchain-shim`
 
-- 源码目录：`E:\wulianwnag\c-kafka-trace-producer`
-- 目标机部署目录：`/opt/c-kafka-trace-producer-release`
+其中：
 
-如果你的目录不同，把命令里的路径替换掉即可。
+- `RDKAFKA_ROOT` 就是外部 `librdkafka` 的安装前缀
+- `build/toolchain-shim` 用来补齐 `-lpthread`、`-ldl`、`-lm`、`-lrt` 这类开发期链接名
 
-## 2. 先理解 4 个目录
+## 3. 推荐方案：Windows 直接交叉编译
 
-无论你走哪条构建路径，都建议把下面 4 个概念分清：
+如果你的 Windows 环境里没有 `cmake` 或 `ninja`，推荐直接用仓库里的 GCC 直调脚本。
 
-- 源码目录：工程本身，例如 `E:\wulianwnag\c-kafka-trace-producer`
-- 构建目录：例如 `build/arm64-release` 或 `build/arm64-cross-release`
-- 运行包目录：例如 `release/arm64`
-- 压缩包：例如 `c-kafka-trace-producer-arm64.tar.gz`
-
-真正应该部署到目标机的是：
-
-- `release/arm64`
-- 或它压出来的 `c-kafka-trace-producer-arm64.tar.gz`
-
-不是整个源码目录。
-
-## 3. 目标机职责
-
-目标机只负责：
-
-- 接收 `c-kafka-trace-producer-arm64.tar.gz`
-- 解压到 `/opt/c-kafka-trace-producer-release`
-- 配置 `config/application.properties`
-- 启动 `bin/c-kafka-trace-producer`
-
-## 4. 路径 A：ARM64 Linux 原生编译
-
-这条路径最简单，前提是你有一台真正的 ARM64 Linux 构建机。
-
-### 4.1 构建机准备
-
-```bash
-cd /opt
-git clone https://github.com/zrwsmd/c-kafka-trace-producer.git
-cd /opt/c-kafka-trace-producer
-chmod +x scripts/*.sh
-chmod +x deploy/device/*.sh
-chmod +x deploy/broker/*.sh
-```
-
-如果是 Ubuntu / Debian ARM64：
-
-```bash
-cd /opt/c-kafka-trace-producer
-./scripts/install-build-deps-ubuntu.sh
-```
-
-### 4.2 编译
-
-如果构建机已经有 ARM64 版本的 `librdkafka`：
-
-```bash
-cd /opt/c-kafka-trace-producer
-./scripts/build-arm64-native.sh
-```
-
-如果你不想依赖系统 `librdkafka`：
-
-```bash
-cd /opt/c-kafka-trace-producer
-./scripts/build-rdkafka-local.sh
-./scripts/build-arm64-local-rdkafka.sh
-```
-
-### 4.3 打包
-
-系统 `librdkafka` 方案：
-
-```bash
-cd /opt/c-kafka-trace-producer
-./scripts/package-release.sh "$PWD/build/arm64-release" "$PWD/release/arm64"
-tar -czf /opt/c-kafka-trace-producer-arm64.tar.gz -C release arm64
-```
-
-本地 `librdkafka` 方案：
-
-```bash
-cd /opt/c-kafka-trace-producer
-RDKAFKA_ROOT="$PWD/third_party/rdkafka/install" \
-./scripts/package-release.sh "$PWD/build/arm64-release" "$PWD/release/arm64"
-tar -czf /opt/c-kafka-trace-producer-arm64.tar.gz -C release arm64
-```
-
-### 4.4 验证产物架构
-
-```bash
-file /opt/c-kafka-trace-producer/build/arm64-release/c-kafka-trace-producer
-file /opt/c-kafka-trace-producer/release/arm64/bin/c-kafka-trace-producer
-```
-
-正常应看到：
-
-```text
-ELF 64-bit LSB pie executable, ARM aarch64
-```
-
-如果看到的是 `x86-64`，说明你没有在 ARM64 环境里编译成功。
-
-## 5. 路径 B：Windows x86_64 + AArch64 交叉编译
-
-这条路径适合你现在这种情况：
-
-- 主机是 Windows x86_64
-- 你手上有一套 `aarch64-none-linux-gnu` 工具链
-- 你希望在 Windows 上直接生成 ARM64 Linux 产物
-
-仓库现在已经新增了这几个文件：
-
-- `cmake/toolchains/aarch64-none-linux-gnu.cmake`
-- `scripts/validate-arm64-toolchain-windows.ps1`
-- `scripts/build-arm64-cross-windows.ps1`
-- `scripts/package-release-cross-windows.ps1`
-
-### 5.1 这条路径的额外前提
-
-Windows 交叉编译时，除了源码外，还需要：
-
-1. `aarch64` 交叉编译工具链
-2. 对应 `sysroot`
-3. ARM64 版本的 `librdkafka` 安装前缀
-4. `cmake`
-5. `ninja`
-
-其中第 3 点非常关键。
-
-当前工程在交叉编译时不会再走主机上的 `pkg-config` 自动找库，而是要求你显式提供：
-
-```text
-RDKAFKA_ROOT=<ARM64 librdkafka install prefix>
-```
-
-也就是说，`RDKAFKA_ROOT` 下面至少要有：
-
-- `include/librdkafka/rdkafka.h`
-- `lib/librdkafka.so`
-  或
-- `lib/librdkafka.a`
-
-### 5.2 先自检工具链
-
-先不要直接编整个项目，先用新增脚本检查工具链是不是完整 C++ SDK。
-
-PowerShell 中执行：
+### 3.1 进入项目目录
 
 ```powershell
 cd E:\wulianwnag\c-kafka-trace-producer
+```
 
+### 3.2 定义路径变量
+
+```powershell
 $ToolchainRoot = 'E:\VSCode-win32-x64-1.85.1\data\extensions\undefined_publisher.devuni-ide-vscode-0.0.1\tool\iec-runtime-gen-run\gcc-arm-10.3-aarch64-none-linux-gnu'
+$RdkafkaRoot = 'E:\wulianwnag\testkafka\output'
+```
 
+### 3.3 先做工具链探测
+
+```powershell
 .\scripts\validate-arm64-toolchain-windows.ps1 -ToolchainRoot $ToolchainRoot
 ```
 
-如果工具链没问题，脚本会输出：
-
-```text
-Toolchain probe succeeded.
-```
-
-### 5.3 你当前这套工具链的实际状态
-
-对你给出的这套工具链，当前实测结果是：
-
-```text
-cannot find -lstdc++
-cannot find -lm
-```
-
-也就是：
-
-- 它有 `aarch64` 编译器
-- 也有 `sysroot`
-- 但对这个 C++ 项目来说，它当前还不是一套完整可用的 C++ SDK
-
-所以如果你直接用这套工具链编本项目，会在自检阶段失败。
-
-这时有两种处理方式：
-
-1. 换成更完整的 `aarch64` Linux SDK / Buildroot SDK
-2. 补齐缺失的 C++ 头文件和运行库目录，再通过脚本参数传进去
-
-### 5.4 如果工具链需要补额外目录
-
-如果你拿到的是“编译器主体 + 额外库目录”的组合，可以这样传：
+如果你的工具链缺少 `libpthread.so`、`libm.so` 这类开发期别名，可以先执行：
 
 ```powershell
-$ExtraIncludeDirs = @(
-  'D:\sdk\include'
-)
-
-$ExtraLibraryDirs = @(
-  'D:\sdk\lib',
-  'D:\sdk\lib64'
-)
-
-.\scripts\validate-arm64-toolchain-windows.ps1 `
-  -ToolchainRoot $ToolchainRoot `
-  -AdditionalIncludeDirs $ExtraIncludeDirs `
-  -AdditionalLibraryDirs $ExtraLibraryDirs
+.\scripts\prepare-arm64-toolchain-shim-windows.ps1 -ToolchainRoot $ToolchainRoot
 ```
 
-### 5.5 正式交叉编译
+不过当前仓库里的直调构建脚本已经会自动准备 `build/toolchain-shim`，一般不需要你单独手工跑这一步。
 
-先准备好 ARM64 版本的 `librdkafka` 安装前缀。例如：
-
-```powershell
-$RdkafkaRoot = 'D:\sdk\rdkafka-aarch64'
-```
-
-然后构建：
+### 3.4 直接构建
 
 ```powershell
-cd E:\wulianwnag\c-kafka-trace-producer
-
-$ToolchainRoot = 'E:\VSCode-win32-x64-1.85.1\data\extensions\undefined_publisher.devuni-ide-vscode-0.0.1\tool\iec-runtime-gen-run\gcc-arm-10.3-aarch64-none-linux-gnu'
-$RdkafkaRoot = 'D:\sdk\rdkafka-aarch64'
-
-.\scripts\build-arm64-cross-windows.ps1 `
+.\scripts\build-arm64-cross-windows-direct.ps1 `
   -ToolchainRoot $ToolchainRoot `
   -RdkafkaRoot $RdkafkaRoot
 ```
 
-如果工具链还依赖补充目录：
-
-```powershell
-.\scripts\build-arm64-cross-windows.ps1 `
-  -ToolchainRoot $ToolchainRoot `
-  -RdkafkaRoot $RdkafkaRoot `
-  -AdditionalIncludeDirs $ExtraIncludeDirs `
-  -AdditionalLibraryDirs $ExtraLibraryDirs
-```
-
-默认输出目录是：
+默认输出目录：
 
 ```text
 build\arm64-cross-release
 ```
 
-### 5.6 Windows 上打包运行包
-
-构建成功后执行：
+### 3.5 打包运行目录
 
 ```powershell
-cd E:\wulianwnag\c-kafka-trace-producer
-
-$ToolchainRoot = 'E:\VSCode-win32-x64-1.85.1\data\extensions\undefined_publisher.devuni-ide-vscode-0.0.1\tool\iec-runtime-gen-run\gcc-arm-10.3-aarch64-none-linux-gnu'
-$RdkafkaRoot = 'D:\sdk\rdkafka-aarch64'
-
 .\scripts\package-release-cross-windows.ps1 `
   -ToolchainRoot $ToolchainRoot `
   -RdkafkaRoot $RdkafkaRoot
-```
-
-如果需要补库目录：
-
-```powershell
-.\scripts\package-release-cross-windows.ps1 `
-  -ToolchainRoot $ToolchainRoot `
-  -RdkafkaRoot $RdkafkaRoot `
-  -AdditionalLibraryDirs $ExtraLibraryDirs
 ```
 
 默认会生成：
@@ -296,51 +94,54 @@ $RdkafkaRoot = 'D:\sdk\rdkafka-aarch64'
 - `release\arm64`
 - `c-kafka-trace-producer-arm64.tar.gz`
 
-### 5.7 Windows 上验证产物架构
+## 4. 备选方案：Windows + CMake 交叉编译
 
-可以用工具链自带的 `objdump.exe` 检查：
+如果你的环境里已经装好了 `cmake` 和 `ninja`，也可以走 CMake 路径：
 
 ```powershell
-& "$ToolchainRoot\bin\objdump.exe" -f .\build\arm64-cross-release\c-kafka-trace-producer
+cd E:\wulianwnag\c-kafka-trace-producer
+
+$ToolchainRoot = 'E:\VSCode-win32-x64-1.85.1\data\extensions\undefined_publisher.devuni-ide-vscode-0.0.1\tool\iec-runtime-gen-run\gcc-arm-10.3-aarch64-none-linux-gnu'
+$RdkafkaRoot = 'E:\wulianwnag\testkafka\output'
+
+.\scripts\build-arm64-cross-windows.ps1 `
+  -ToolchainRoot $ToolchainRoot `
+  -RdkafkaRoot $RdkafkaRoot
 ```
 
-正常应出现：
+如果脚本发现本地没有 `build/toolchain-shim`，它现在也会自动准备一份默认 shim。
+
+## 5. 验证产物架构
+
+你可以直接用工具链自带的 `readelf` 或 `objdump` 检查：
+
+```powershell
+& "$ToolchainRoot\bin\readelf.exe" -h .\build\arm64-cross-release\c-kafka-trace-producer
+```
+
+正常应该看到：
 
 ```text
-architecture: aarch64
+Class:   ELF64
+Machine: AArch64
 ```
 
-## 6. 正式部署到目标机
+如果你看到的是 `x86-64`，说明这不是 ARM64 产物。
 
-无论你走路径 A 还是路径 B，拿到的最终压缩包都是：
+## 6. 部署到 Buildroot 目标机
 
-```text
-c-kafka-trace-producer-arm64.tar.gz
-```
+推荐把 `c-kafka-trace-producer-arm64.tar.gz` 传到目标机，例如放到 `/opt/`。
 
-把它传到目标机 `/opt/` 下即可。
+### 6.1 解压
 
-### 6.1 目标机解压
-
-Buildroot 上很多时候是 BusyBox `tar`，不支持 GNU tar 的 `-z`。
-
-所以推荐这样解压：
+Buildroot 常见的是 BusyBox `tar`，建议这样解压：
 
 ```sh
 mkdir -p /opt/c-kafka-trace-producer-release
 gzip -dc /opt/c-kafka-trace-producer-arm64.tar.gz | tar -xf - -C /opt/c-kafka-trace-producer-release --strip-components=1
 ```
 
-然后检查：
-
-```sh
-ls -l /opt/c-kafka-trace-producer-release
-ls -l /opt/c-kafka-trace-producer-release/bin
-```
-
-### 6.2 先验证 librdkafka 本身
-
-在目标机上，建议先跑 probe，再跑完整 producer：
+### 6.2 先做 `librdkafka` 探测
 
 ```sh
 cd /opt/c-kafka-trace-producer-release
@@ -348,29 +149,15 @@ export LD_LIBRARY_PATH="$PWD/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 ./bin/c-kafka-rdkafka-probe
 ```
 
-如果你关心某些特性，例如 TLS / SASL，可直接要求它检查：
+如果你明确知道自己的 `librdkafka` 是带哪些能力编出来的，也可以按需加 `--require`，例如：
 
 ```sh
-cd /opt/c-kafka-trace-producer-release
-export LD_LIBRARY_PATH="$PWD/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-./bin/c-kafka-rdkafka-probe --require ssl,sasl
+./bin/c-kafka-rdkafka-probe --require gzip
 ```
 
-正常会输出类似：
+不要默认要求 `ssl,sasl`，除非你的 ARM64 `librdkafka` 确实开启了这些能力。
 
-```text
-=== librdkafka Probe ===
-librdkafka version: ...
-builtin.features: gzip,snappy,ssl,sasl,...
-rd_kafka_new: ok
-require[ssl]: ok
-require[sasl]: ok
-probe result: ok
-```
-
-如果这里已经失败，就不要继续跑完整 producer，先解决 `librdkafka` 兼容性问题。
-
-### 6.3 首次启动：再前台验证 producer
+### 6.3 启动 producer
 
 ```sh
 cd /opt/c-kafka-trace-producer-release
@@ -380,20 +167,7 @@ export LD_LIBRARY_PATH="$PWD/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 ./bin/c-kafka-trace-producer ./config/application.properties
 ```
 
-正常启动后，日志会出现类似：
-
-```text
-=== Native Kafka Trace Producer ===
-=== Trace Config ===
-[KafkaProducer] creating Kafka config...
-[KafkaProducer] initialized: ...
->>> sending 1000000 frames to Kafka ...
-[TraceSimulator] send loop started: ...
-```
-
-如果你已经看到了持续增长的进度日志，就说明 producer 已经在正常发送数据。
-
-### 6.4 验证消费
+### 6.4 验证 consumer
 
 ```sh
 cd /opt/c-kafka-trace-producer-release
@@ -403,64 +177,33 @@ export LD_LIBRARY_PATH="$PWD/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 ### 6.5 后台运行
 
-如果这台目标机已经确认有 `bash`：
-
 ```sh
 cd /opt/c-kafka-trace-producer-release
-bash ./deploy/device/start.sh
-bash ./deploy/device/status.sh
-bash ./deploy/device/tail-log.sh
+./deploy/device/start.sh
+./deploy/device/status.sh
+./deploy/device/tail-log.sh
 ```
 
 停止：
 
 ```sh
 cd /opt/c-kafka-trace-producer-release
-bash ./deploy/device/stop.sh
+./deploy/device/stop.sh
 ```
 
-如果你不想用脚本，也可以手工后台：
+## 7. 配置文件修改规则
 
-```sh
-cd /opt/c-kafka-trace-producer-release
-mkdir -p logs
-export LD_LIBRARY_PATH="$PWD/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-nohup ./bin/c-kafka-trace-producer ./config/application.properties > ./logs/producer.log 2>&1 &
-echo $! > ./logs/producer.pid
-```
-
-## 7. 修改配置后的处理方式
-
-### 7.1 只改源码目录里的配置
-
-如果你修改的是源码目录里的：
+源码目录里的配置文件是：
 
 ```text
 config/application.properties
 ```
 
-那么：
+如果你修改的是仓库里的这个文件：
 
 - 不需要重新编译
 - 需要重新打包
-- 需要重新传包到目标机
-
-Linux ARM64 原生打包：
-
-```bash
-./scripts/package-release.sh "$PWD/build/arm64-release" "$PWD/release/arm64"
-tar -czf /opt/c-kafka-trace-producer-arm64.tar.gz -C release arm64
-```
-
-Windows 交叉打包：
-
-```powershell
-.\scripts\package-release-cross-windows.ps1 `
-  -ToolchainRoot $ToolchainRoot `
-  -RdkafkaRoot $RdkafkaRoot
-```
-
-### 7.2 只改目标机上的配置
+- 需要把新的运行目录重新传到目标机
 
 如果你修改的是目标机上的：
 
@@ -468,105 +211,68 @@ Windows 交叉打包：
 /opt/c-kafka-trace-producer-release/config/application.properties
 ```
 
-那么：
-
-- 不需要重新编译
-- 不需要重新打包
-- 只需要重启程序
+那就只需要重启程序，不需要重新编译，也不需要重新打包。
 
 ## 8. 常见问题
 
-### 8.1 `Exec format error`
+### 8.1 `cannot find -lpthread` / `cannot find -ldl` / `cannot find -lm` / `cannot find -lrt`
 
-这说明目标机拿到的不是 ARM64 二进制。
-
-最常见原因：
-
-- 在 `x86_64` 主机上直接执行了 `build-arm64-native.sh`
-- 构建目录名字虽然叫 `arm64`，但实际上还是本机原生编译
-
-先确认：
-
-```bash
-file build/arm64-release/c-kafka-trace-producer
-```
-
-或者：
-
-```powershell
-& "$ToolchainRoot\bin\objdump.exe" -f .\build\arm64-cross-release\c-kafka-trace-producer
-```
-
-### 8.2 `cannot find -lstdc++`
-
-说明你的交叉工具链不完整，缺失 C++ 运行时库。
+这说明你的交叉工具链里有运行时库，但缺少开发期链接名。
 
 处理方式：
 
-- 换一套完整的 `aarch64` Linux SDK / Buildroot SDK
-- 或补齐 `libstdc++` 所在目录，再通过 `-AdditionalLibraryDirs` 传给脚本
+- 运行 `.\scripts\prepare-arm64-toolchain-shim-windows.ps1 -ToolchainRoot $ToolchainRoot`
+- 或者手动把对应库目录通过 `-AdditionalLibraryDirs` 传给构建脚本
 
-### 8.3 `cannot find -lm`
+### 8.2 `Cross-compilation requires RDKAFKA_ROOT`
 
-说明工具链的标准数学库没有被正确找到。
+这说明你在交叉编译时没有给当前项目传 ARM64 `librdkafka` 前缀。
 
-通常也是：
-
-- 工具链不完整
-- 或 `sysroot` / 补充库目录不完整
-
-### 8.4 `Cross-compilation requires RDKAFKA_ROOT`
-
-说明你在交叉编译时没有提供 ARM64 版本的 `librdkafka` 安装前缀。
-
-需要补上：
+需要提供：
 
 ```text
--RdkafkaRoot D:\path\to\rdkafka-aarch64
+-RdkafkaRoot E:\path\to\rdkafka-arm64
 ```
 
-### 8.5 `invalid tar magic`
+并确保下面两个路径真实存在：
 
-如果目标机直接：
+- `include\librdkafka\rdkafka.h`
+- `lib\librdkafka.a` 或 `lib\librdkafka.so`
 
-```sh
-tar -xzf xxx.tar.gz
-```
+### 8.3 `Exec format error`
 
-报错，不是包坏了，通常是 BusyBox `tar` 对 `.tar.gz` 处理方式不同。
+这说明目标机拿到的不是 ARM64 Linux ELF。
 
-改用：
-
-```sh
-gzip -dc xxx.tar.gz | tar -xf -
-```
-
-### 8.6 `librdkafka.so` 找不到
-
-先确认启动前设置了：
-
-```sh
-export LD_LIBRARY_PATH="$PWD/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-```
-
-再检查运行包里是否真的带出了对应 `.so` 文件。
-
-## 9. 推荐流程
-
-### 9.1 如果你有 ARM64 Linux 构建机
-
-优先走路径 A，最省心。
-
-### 9.2 如果你只有 Windows x86_64 主机
-
-走路径 B，但先执行：
+先回到开发机检查：
 
 ```powershell
-.\scripts\validate-arm64-toolchain-windows.ps1 -ToolchainRoot $ToolchainRoot
+& "$ToolchainRoot\bin\readelf.exe" -h .\build\arm64-cross-release\c-kafka-trace-producer
 ```
 
-只有这个步骤成功后，再继续构建和打包。
+### 8.4 程序能启动，但连不上 Kafka broker
 
-### 9.3 如果你的工具链像当前这套一样卡在 `-lstdc++`
+如果可执行文件本身已经在目标机运行起来，只是日志里出现：
 
-先不要继续编项目，先去拿一套更完整的 SDK，或者补齐缺失的 C++ 库目录后再继续。
+- `Connect to ... failed`
+- `No route to host`
+- `1/1 brokers are down`
+- `flush timeout`
+
+那通常已经不是编译兼容性问题，而是网络问题。继续排查：
+
+- 目标机是否能路由到 broker
+- broker 的 `9092` 是否对目标机开放
+- 云安全组或防火墙是否放行
+- broker 对外监听地址是否正确
+
+## 9. 建议你后续固定下来的工作流
+
+对你当前这套环境，建议以后都按这个顺序来：
+
+1. 在 `E:\wulianwnag\testkafka\output` 维护你自己编好的 ARM64 `librdkafka`
+2. 在当前项目里把它作为外部依赖，通过 `RDKAFKA_ROOT` 引入
+3. 用 `build-arm64-cross-windows-direct.ps1` 生成 ARM64 可执行文件
+4. 用 `package-release-cross-windows.ps1` 生成运行包
+5. 把运行包传到 Buildroot 目标机验证
+
+这条链路已经和你当前的 Buildroot ARM64 环境对齐，不需要再回退到 C++ 方案。

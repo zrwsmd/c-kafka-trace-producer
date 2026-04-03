@@ -1,39 +1,31 @@
-# Buildroot ARM64 环境下交叉编译 librdkafka 与 producer.c 指南
+# Buildroot ARM64 环境下交叉编译 librdkafka 与最小 C Producer 指南
 
-本文档记录一套已经验证可执行的流程，用于在 Windows 主机上使用指定的 ARM64 交叉编译器：
+本文档记录一套已经验证通过的流程，用于在 Windows 主机上使用指定的 ARM64 交叉工具链编译 `librdkafka`，并进一步编译一个最小 `producer.c` 做目标机验证。
 
-`E:\VSCode-win32-x64-1.85.1\data\extensions\undefined_publisher.devuni-ide-vscode-0.0.1\tool\iec-runtime-gen-run\gcc-arm-10.3-aarch64-none-linux-gnu`
+已验证过的工具链路径：
 
-交叉编译 `librdkafka`，并进一步编译一个 `producer.c` 示例程序，最终把可执行文件拷贝到 Buildroot ARM64 设备上运行。
+```text
+E:\VSCode-win32-x64-1.85.1\data\extensions\undefined_publisher.devuni-ide-vscode-0.0.1\tool\iec-runtime-gen-run\gcc-arm-10.3-aarch64-none-linux-gnu
+```
 
-本文档假设：
+本文档默认使用这些目录：
 
-- Kafka broker 地址为 `47.129.128.147:9092`
-- 工作目录使用 `E:\wulianwnag\testkafka`
-- 当前机器已安装 Git for Windows
-- 交叉编译器目录已经存在，不需要额外下载安装
+- 工作目录：`E:\wulianwnag\testkafka`
+- `librdkafka` 源码目录：`E:\wulianwnag\testkafka\librdkafka`
+- 安装前缀：`E:\wulianwnag\testkafka\output`
+- 本地 shim 库目录：`E:\wulianwnag\testkafka\toolchain-shim`
+- 最小 demo 源文件：`E:\wulianwnag\testkafka\producer.c`
+- 最终 ARM64 可执行文件：`E:\wulianwnag\testkafka\producer`
 
-## 1. 目录约定
+Kafka broker 示例地址：
 
-本文档统一使用下面几个目录：
+```text
+47.129.128.147:9092
+```
 
-- `E:\wulianwnag\testkafka`
-- `E:\wulianwnag\testkafka\librdkafka`
-- `E:\wulianwnag\testkafka\output`
-- `E:\wulianwnag\testkafka\toolchain-shim`
-- `E:\wulianwnag\testkafka\producer.c`
-- `E:\wulianwnag\testkafka\producer`
+## 1. 从 git clone 开始准备源码
 
-其中：
-
-- `librdkafka` 是源码目录
-- `output` 是安装目录
-- `toolchain-shim` 是为当前工具链补充开发期链接库的目录
-- `producer` 是最终生成的 ARM64 Linux 可执行文件
-
-## 2. 准备源码目录
-
-先在 PowerShell 中创建工作目录并下载源码：
+先在 PowerShell 里执行：
 
 ```powershell
 New-Item -ItemType Directory -Force E:\wulianwnag\testkafka | Out-Null
@@ -43,33 +35,31 @@ Set-Location .\librdkafka
 git submodule update --init --recursive
 ```
 
-完成后，源码目录应为：
+完成后源码目录应为：
 
 ```text
 E:\wulianwnag\testkafka\librdkafka
 ```
 
-## 3. 打开 Git Bash
+## 2. 打开 Git Bash
 
-后续 `configure` 和 `make` 建议在 Git Bash 中执行，不要在 PowerShell 里直接跑 `./configure`。
+后续 `configure` 和 `make` 建议在 Git Bash 里执行。
 
-可以在 PowerShell 中直接启动 Git Bash：
+如果本机已经安装 Git for Windows，可以在 PowerShell 里启动：
 
 ```powershell
 & 'D:\Git\bin\bash.exe'
 ```
 
-启动后切换到源码目录：
+进入源码目录：
 
 ```bash
 cd /e/wulianwnag/testkafka/librdkafka
 ```
 
-注意：
+注意 Windows 路径 `E:\wulianwnag\testkafka` 在 Git Bash 下写成 `/e/wulianwnag/testkafka`。
 
-- Windows 下的 `E:\wulianwnag\testkafka` 在 Git Bash 中写作 `/e/wulianwnag/testkafka`
-
-## 4. 设置交叉编译环境变量
+## 3. 设置交叉编译环境变量
 
 在 Git Bash 中执行：
 
@@ -80,13 +70,12 @@ export PREFIX=/e/wulianwnag/testkafka/output
 export DEVLIB=/e/wulianwnag/testkafka/toolchain-shim
 
 export CC=$TOOLROOT/bin/gcc.exe
-export CXX=$TOOLROOT/bin/g++.exe
 export AR=$TOOLROOT/bin/ar.exe
 export RANLIB=$TOOLROOT/bin/ranlib.exe
 export STRIP=$TOOLROOT/bin/strip.exe
 ```
 
-可以先做一次简单确认：
+可以先确认一下：
 
 ```bash
 $CC -dumpmachine
@@ -98,34 +87,36 @@ $CC --print-sysroot
 - target 类似 `aarch64-none-linux-gnu`
 - sysroot 指向 `.../aarch64-none-linux-gnu/libc`
 
-## 5. 补充本地 shim 库目录
+## 4. 准备本地 shim 库目录
 
-当前工具链的 sysroot 里包含运行时库，但缺少部分开发期链接文件。为了让 `configure` 和后续链接顺利通过，需要单独准备一个本地 shim 目录。
+### 4.1 为什么需要 shim 目录
 
-这里的 shim 可以理解为一层“本地兼容垫片”，作用不是替换原始库，而是给链接器补齐它想找的库名。
+你当前这套工具链的 sysroot 里有运行时库文件，但缺少某些开发期链接名。
 
 例如：
 
-- 当编译参数里出现 `-lpthread` 时，链接器会优先查找 `libpthread.so` 或 `libpthread.a`
-- 但当前工具链的 sysroot 里实际只有 `libpthread.so.0`
-- 因此 `configure` 做线程库探测时会报 `cannot find -lpthread`
+- 链接器看到 `-lpthread` 时，会优先找 `libpthread.so` 或 `libpthread.a`
+- 但 sysroot 里实际存在的往往是 `libpthread.so.0`
 
-`libdl`、`libm`、`librt` 的处理逻辑也是一样。当前做法是把 sysroot 中已经存在的目标库复制到一个单独目录里，并改成开发期链接常用的名字，让编译器可以通过 `-L$DEVLIB` 先找到这些库。
+这就会导致：
 
-这些文件都不是额外下载的，而是直接来自当前交叉编译器自带的 sysroot：
+- `configure` 探测线程库失败
+- 后续 `gcc` 链接时报 `cannot find -lpthread`
 
-- `libpthread.so` 来源于 `$SYSROOT/lib64/libpthread.so.0`
-- `libdl.so` 来源于 `$SYSROOT/lib64/libdl.so.2`
-- `libm.so` 来源于 `$SYSROOT/lib64/libm.so.6`
-- `librt.so` 来源于 `$SYSROOT/usr/lib64/librt.so`
+`libdl`、`libm`、`librt` 也是同样的情况。
 
-之所以使用单独的 `toolchain-shim` 目录，而不是直接修改原工具链目录，主要是为了：
+所以这里单独放一个 `toolchain-shim` 目录，用来给链接器补齐这些常见名字。它不是额外下载的库，也不是替换原始库，只是把 sysroot 里已经存在的目标库复制出来，命名成更适合开发期链接的名字。
 
-- 不破坏原始交叉编译器目录
-- 方便回退和复现
-- 让当前项目的编译依赖更清晰
+### 4.2 这些 shim 文件从哪来
 
-如果后续你拿到了 Buildroot 自己生成的完整 `staging/sysroot`，通常可以优先直接使用那套 sysroot，因为它一般会自带更完整的开发头文件、链接脚本和库文件。
+当前验证通过的一组来源如下：
+
+- `libpthread.so` 来自 `$SYSROOT/lib64/libpthread.so.0`
+- `libdl.so` 来自 `$SYSROOT/lib64/libdl.so.2`
+- `libm.so` 来自 `$SYSROOT/lib64/libm.so.6`
+- `librt.so` 来自 `$SYSROOT/usr/lib64/librt.so`
+
+### 4.3 生成 shim 目录
 
 在 Git Bash 中执行：
 
@@ -147,9 +138,9 @@ export LDFLAGS="--sysroot=$SYSROOT -L$DEVLIB -L$SYSROOT/usr/lib64 -Wl,-rpath-lin
 export LIBRARY_PATH="$DEVLIB:$SYSROOT/usr/lib64:$SYSROOT/lib64"
 ```
 
-## 6. 配置 librdkafka
+## 5. 配置 librdkafka
 
-为了先完成最小可用的 C 版 producer 验证，这里关闭 SSL、SASL、zstd、zlib 等额外依赖。
+为了先完成最小可用的 C 版本验证，这里关闭了 `ssl`、`sasl`、`zstd`、`lz4-ext`、`zlib` 等额外依赖。
 
 在 Git Bash 中执行：
 
@@ -172,15 +163,9 @@ cd /e/wulianwnag/testkafka/librdkafka
 
 如果配置成功，根目录会生成 `config.h`。
 
-可以检查一下：
+## 6. 编译并安装 librdkafka
 
-```bash
-ls -l config.h
-```
-
-## 7. 编译并安装 C 版 librdkafka
-
-当前目标只需要 `producer.c`，因此直接编译并安装 `src` 下的 C 库即可：
+当前目标只是给最小 C demo 和当前项目提供 ARM64 `librdkafka`，所以直接编译 `src` 即可：
 
 ```bash
 cd /e/wulianwnag/testkafka/librdkafka
@@ -189,24 +174,22 @@ make -C src -j4
 make -C src install
 ```
 
-安装完成后，目标目录应包含：
+安装完成后，下面这些路径应存在：
 
 ```bash
 ls -l /e/wulianwnag/testkafka/output/lib
 ls -l /e/wulianwnag/testkafka/output/include/librdkafka
 ```
 
-正常会看到类似文件：
+常见结果包括：
 
 - `librdkafka.a`
 - `librdkafka.so`
-- `librdkafka.so.1`
 - `rdkafka.h`
-- `rdkafka_mock.h`
 
-## 8. 编写 producer.c
+## 7. 编写最小 producer.c
 
-在 `E:\wulianwnag\testkafka\producer.c` 写入以下内容：
+把下面内容保存为 `E:\wulianwnag\testkafka\producer.c`：
 
 ```c
 #include <stdio.h>
@@ -291,17 +274,11 @@ int main(int argc, char **argv) {
 }
 ```
 
-## 9. 交叉编译 producer.c
+## 8. 交叉编译最小 producer.c
 
 继续在 Git Bash 中执行：
 
 ```bash
-export TOOLROOT=/e/VSCode-win32-x64-1.85.1/data/extensions/undefined_publisher.devuni-ide-vscode-0.0.1/tool/iec-runtime-gen-run/gcc-arm-10.3-aarch64-none-linux-gnu
-export SYSROOT=$TOOLROOT/aarch64-none-linux-gnu/libc
-export DEVLIB=/e/wulianwnag/testkafka/toolchain-shim
-export PREFIX=/e/wulianwnag/testkafka/output
-export CC=$TOOLROOT/bin/gcc.exe
-
 $CC --sysroot=$SYSROOT -O2 \
   -I$PREFIX/include \
   -L$PREFIX/lib \
@@ -314,30 +291,15 @@ $CC --sysroot=$SYSROOT -O2 \
   -lpthread -ldl -lm -lrt
 ```
 
-如果遇到 `__atomic` 相关未定义符号，可以在最后补一个 `-latomic`：
+如果遇到 `__atomic` 相关未定义符号，可以在最后补一个 `-latomic`。
 
-```bash
-$CC --sysroot=$SYSROOT -O2 \
-  -I$PREFIX/include \
-  -L$PREFIX/lib \
-  -L$DEVLIB \
-  -Wl,-rpath-link,$SYSROOT/lib64 \
-  -Wl,-rpath-link,$SYSROOT/usr/lib64 \
-  -o /e/wulianwnag/testkafka/producer \
-  /e/wulianwnag/testkafka/producer.c \
-  $PREFIX/lib/librdkafka.a \
-  -lpthread -ldl -lm -lrt -latomic
-```
-
-编译成功后可以裁剪符号：
+编译完成后可以裁剪符号：
 
 ```bash
 $STRIP /e/wulianwnag/testkafka/producer
 ```
 
-## 10. 验证产物是否为 ARM64 Linux 可执行文件
-
-使用交叉工具链自带的 `readelf` 检查：
+## 9. 验证产物是否为 ARM64 Linux ELF
 
 ```bash
 $TOOLROOT/bin/readelf.exe -h /e/wulianwnag/testkafka/producer | grep Machine
@@ -349,118 +311,51 @@ $TOOLROOT/bin/readelf.exe -h /e/wulianwnag/testkafka/producer | grep Machine
 Machine:                           AArch64
 ```
 
-这说明产物是 ARM64 Linux ELF，可放到 Buildroot 设备上执行。
+这说明它是 ARM64 Linux 可执行文件，可以放到 Buildroot 设备上运行。
 
-## 11. 拷贝到 Buildroot 目标机运行
+## 10. 上传到 Buildroot 目标机运行
 
-将 `producer` 文件拷贝到目标机后执行：
+把 `producer` 文件拷到目标机后执行：
 
 ```sh
 chmod +x ./producer
 ./producer 47.129.128.147:9092 test-topic "hello from arm64"
 ```
 
-如果发送成功，通常会看到类似输出：
+如果发送成功，通常会看到：
 
 ```text
 delivered to topic=test-topic partition=0 offset=123
 ```
 
-如果出现类似下面的信息：
+如果出现：
+
+- `Connect to 47.129.128.147:9092 failed`
+- `No route to host`
+- `1/1 brokers are down`
+- `flush timeout`
+
+那说明程序本身已经在目标机运行起来了，问题在网络链路，不在编译兼容性。
+
+## 11. 和当前项目的关系
+
+这份外部 ARM64 `librdkafka` 编好后，当前项目不需要把 `librdkafka` 源码拷进仓库，只需要在交叉编译时传入：
 
 ```text
-Connect to 47.129.128.147:9092 failed: No route to host
-1/1 brokers are down
-flush timeout
+RDKAFKA_ROOT=E:\wulianwnag\testkafka\output
 ```
 
-则说明程序本身已经运行起来了，但目标设备到 Kafka broker 的网络不通，需要继续检查：
-
-- 目标机 IP 地址是否正确
-- 默认路由是否存在
-- 目标机是否能访问外网
-- broker 侧防火墙或云安全组是否已放行 `9092`
-- broker 是否监听外网可访问地址
-
-## 12. 推荐的完整命令顺序
-
-如果希望按顺序从头执行一遍，可以参考下面这组命令。
-
-### 12.1 PowerShell
+当前项目已经迁成纯 C，后续可以直接这样构建：
 
 ```powershell
-New-Item -ItemType Directory -Force E:\wulianwnag\testkafka | Out-Null
-Set-Location E:\wulianwnag\testkafka
-git clone https://github.com/confluentinc/librdkafka.git
-Set-Location .\librdkafka
-git submodule update --init --recursive
-& 'D:\Git\bin\bash.exe'
+cd E:\wulianwnag\c-kafka-trace-producer
+
+$ToolchainRoot = 'E:\VSCode-win32-x64-1.85.1\data\extensions\undefined_publisher.devuni-ide-vscode-0.0.1\tool\iec-runtime-gen-run\gcc-arm-10.3-aarch64-none-linux-gnu'
+$RdkafkaRoot = 'E:\wulianwnag\testkafka\output'
+
+.\scripts\build-arm64-cross-windows-direct.ps1 `
+  -ToolchainRoot $ToolchainRoot `
+  -RdkafkaRoot $RdkafkaRoot
 ```
 
-### 12.2 Git Bash
-
-```bash
-cd /e/wulianwnag/testkafka/librdkafka
-
-export TOOLROOT=/e/VSCode-win32-x64-1.85.1/data/extensions/undefined_publisher.devuni-ide-vscode-0.0.1/tool/iec-runtime-gen-run/gcc-arm-10.3-aarch64-none-linux-gnu
-export SYSROOT=$TOOLROOT/aarch64-none-linux-gnu/libc
-export PREFIX=/e/wulianwnag/testkafka/output
-export DEVLIB=/e/wulianwnag/testkafka/toolchain-shim
-export CC=$TOOLROOT/bin/gcc.exe
-export CXX=$TOOLROOT/bin/g++.exe
-export AR=$TOOLROOT/bin/ar.exe
-export RANLIB=$TOOLROOT/bin/ranlib.exe
-export STRIP=$TOOLROOT/bin/strip.exe
-
-mkdir -p $DEVLIB
-cp -f $SYSROOT/lib64/libpthread.so.0 $DEVLIB/libpthread.so
-cp -f $SYSROOT/lib64/libdl.so.2 $DEVLIB/libdl.so
-cp -f $SYSROOT/lib64/libm.so.6 $DEVLIB/libm.so
-cp -f $SYSROOT/usr/lib64/librt.so $DEVLIB/librt.so
-
-export CPPFLAGS="--sysroot=$SYSROOT"
-export CFLAGS="--sysroot=$SYSROOT -O2 -fPIC"
-export LDFLAGS="--sysroot=$SYSROOT -L$DEVLIB -L$SYSROOT/usr/lib64 -Wl,-rpath-link,$SYSROOT/lib64 -Wl,-rpath-link,$SYSROOT/usr/lib64"
-export LIBRARY_PATH="$DEVLIB:$SYSROOT/usr/lib64:$SYSROOT/lib64"
-
-./configure \
-  --build=x86_64-w64-mingw32 \
-  --host=aarch64-none-linux-gnu \
-  --prefix=$PREFIX \
-  --enable-static \
-  --disable-shared \
-  --disable-ssl \
-  --disable-gssapi \
-  --disable-sasl \
-  --disable-zstd \
-  --disable-lz4-ext \
-  --disable-zlib
-
-make -C src clean
-make -C src -j4
-make -C src install
-```
-
-### 12.3 编译 producer
-
-```bash
-$CC --sysroot=$SYSROOT -O2 \
-  -I$PREFIX/include \
-  -L$PREFIX/lib \
-  -L$DEVLIB \
-  -Wl,-rpath-link,$SYSROOT/lib64 \
-  -Wl,-rpath-link,$SYSROOT/usr/lib64 \
-  -o /e/wulianwnag/testkafka/producer \
-  /e/wulianwnag/testkafka/producer.c \
-  $PREFIX/lib/librdkafka.a \
-  -lpthread -ldl -lm -lrt
-```
-
-## 13. 结果说明
-
-完成以上步骤后，你会得到两部分结果：
-
-- `E:\wulianwnag\testkafka\output` 下的 ARM64 版 `librdkafka`
-- `E:\wulianwnag\testkafka\producer` 这个 ARM64 Linux 可执行文件
-
-将 `producer` 拷到 Buildroot ARM64 目标机后即可实际验证是否能向你的 Kafka broker 发送消息。
+这就是你后续维护当前项目时最推荐保留的依赖方式。

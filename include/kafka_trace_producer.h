@@ -1,71 +1,43 @@
-
 #pragma once
 
-#include <atomic>
-#include <condition_variable>
-#include <mutex>
-#include <string>
+#include <stddef.h>
 
 #include <librdkafka/rdkafka.h>
 
 #include "trace_config.h"
 
-namespace trace {
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-class KafkaTraceProducer {
- public:
-  explicit KafkaTraceProducer(const TraceConfig& config);
-  ~KafkaTraceProducer();
+typedef struct TraceKafkaProducer {
+  TraceConfig config;
+  char topic[128];
+  rd_kafka_t* producer;
+  long long sent_count;
+  long long failed_count;
+  int closed;
+} TraceKafkaProducer;
 
-  void sendSync(const std::string& key, const std::string& value);
-  void flush(int timeout_ms = 30000);
-  void close();
+int trace_kafka_producer_init(
+    TraceKafkaProducer* producer,
+    const TraceConfig* config,
+    char* error_buffer,
+    size_t error_buffer_size);
 
-  long long sentCount() const;
-  long long failedCount() const;
+int trace_kafka_producer_send_sync(
+    TraceKafkaProducer* producer,
+    const char* key,
+    const char* value,
+    char* error_buffer,
+    size_t error_buffer_size);
 
- private:
-  struct DeliveryContext {
-    std::mutex mutex;
-    std::condition_variable cv;
-    bool completed = false;
-    bool success = false;
-    std::string error_message;
-  };
+void trace_kafka_producer_flush(TraceKafkaProducer* producer, int timeout_ms);
+void trace_kafka_producer_close(TraceKafkaProducer* producer);
 
-  static void deliveryReportCallback(
-      rd_kafka_t* producer,
-      const rd_kafka_message_t* message,
-      void* opaque);
+long long trace_kafka_producer_sent_count(const TraceKafkaProducer* producer);
+long long trace_kafka_producer_failed_count(const TraceKafkaProducer* producer);
 
-  static void logCallback(
-      const rd_kafka_t* producer,
-      int level,
-      const char* facility,
-      const char* message);
-
-  static void setConfOrThrow(
-      rd_kafka_conf_t* conf,
-      const char* name,
-      const std::string& value);
-
-  static void setConfOrThrow(
-      rd_kafka_conf_t* conf,
-      const char* name,
-      bool value);
-
-  static void setConfOrThrow(
-      rd_kafka_conf_t* conf,
-      const char* name,
-      int value);
-
-  TraceConfig config_;
-  std::string topic_;
-  rd_kafka_t* producer_ = nullptr;
-  std::atomic<long long> sent_count_{0};
-  std::atomic<long long> failed_count_{0};
-  bool closed_ = false;
-};
-
-}  // namespace trace
-  
+#ifdef __cplusplus
+}
+#endif

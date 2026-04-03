@@ -1,39 +1,41 @@
 
 # c-kafka-trace-producer
 
-This project is the native C++ replacement for the Java-based Kafka trace producer.
-It is designed for an ARM64 industrial PC that cannot install Java or Node.js on the target.
+This project is the native C replacement for the Java-based Kafka trace producer.
+It targets Linux devices, including Buildroot ARM64 systems, that cannot install Java or Node.js on the target.
 
 The workflow is:
 
-1. Generate this project on your development machine with Node.js.
-2. Build a native ARM64 binary on a Linux ARM64 build machine or ARM64 container.
-3. Package the binary together with required shared libraries.
-4. Copy the packaged folder to the industrial PC and run it directly, without Java.
+1. Prepare or generate the project on your development machine.
+2. Build a native Linux binary for the target architecture.
+3. Package the executable together with config, scripts, and any required runtime libraries.
+4. Copy the packaged folder to the device and run it directly.
 
 ## What Is Included
 
-- Native C++ producer that mirrors the Java producer flow:
-  - loads application.properties
+- Native C producer that mirrors the Java producer flow:
+  - loads `application.properties`
   - generates trace batches
   - sends JSON payloads to Kafka with synchronous delivery confirmation
   - prints progress and summary
-- Native C++ simple consumer example for link verification
-- Build scripts for ARM64 Linux
-- Optional local librdkafka build script
-- Packaging scripts that bundle the binary and runtime libraries into release/arm64
+- Native C simple consumer example for link verification
+- Minimal `librdkafka` probe executable for target-side validation
+- Build scripts for native Linux ARM64 and Windows-to-ARM64 cross-compilation
+- Optional local `librdkafka` build script
+- Packaging scripts that bundle binaries and runtime files into `release/arm64`
 - Device deployment scripts for foreground mode, background mode, and systemd
 - Kafka broker deployment scripts carried over from the original project
 
 ## Important Notes
 
-- The target industrial PC does not need Java.
-- The target industrial PC does not need Node.js.
-- The target industrial PC only needs the packaged native files copied to it.
-- This native version uses librdkafka for Kafka protocol support.
-- To reduce native dependency friction on constrained devices, the generated config defaults to:
-  - kafka.compression.type=none
-- You can switch it back to lz4 later if your librdkafka build supports it.
+- The target device does not need Java.
+- The target device does not need Node.js.
+- The project has been migrated from C++ to pure C so it can build with ARM64 toolchains that do not provide a complete `libstdc++` SDK.
+- This native version uses `librdkafka` for Kafka protocol support.
+- When cross-compiling, point `RDKAFKA_ROOT` at a compiled ARM64 `librdkafka` install prefix.
+- If your cross toolchain misses development symlinks for `-lpthread`, `-ldl`, `-lm`, or `-lrt`, prepare a local shim directory under `build/toolchain-shim` and pass it as an extra library directory.
+- To reduce dependency friction on constrained devices, the default config uses `kafka.compression.type=none`.
+- Only use `c-kafka-rdkafka-probe --require ...` for features that were actually enabled when your `librdkafka` was built.
 
 ## Project Layout
 
@@ -73,15 +75,31 @@ Use this if you do not want to rely on a system-wide librdkafka installation on 
 ./scripts/package-release.sh
 ```
 
-### Option C: Cross-build on Windows x86_64 with an AArch64 SDK
+### Option C: Cross-build on Windows x86_64 with direct GCC invocation
 
 Use this when your host is Windows x86_64 and you have:
 
 - an `aarch64-none-linux-gnu` cross toolchain with sysroot
 - an ARM64 `librdkafka` install prefix
-- `cmake` plus `ninja` in `PATH`
+- no `cmake` or `ninja` in `PATH`, or you prefer a simpler direct build flow
 
 Run:
+
+```powershell
+.\scripts\build-arm64-cross-windows-direct.ps1 `
+  -ToolchainRoot C:\path\to\toolchain `
+  -RdkafkaRoot C:\path\to\rdkafka-arm64
+
+.\scripts\package-release-cross-windows.ps1 `
+  -ToolchainRoot C:\path\to\toolchain `
+  -RdkafkaRoot C:\path\to\rdkafka-arm64
+```
+
+The direct build script automatically prepares `build/toolchain-shim` when needed for missing ARM64 development-library aliases.
+
+### Option D: Cross-build on Windows x86_64 with CMake
+
+Use this when `cmake` and `ninja` are available in `PATH`:
 
 ```powershell
 .\scripts\validate-arm64-toolchain-windows.ps1 -ToolchainRoot C:\path\to\toolchain
@@ -138,14 +156,18 @@ The build also generates a minimal `librdkafka` probe executable. Use it on the 
 - `rd_kafka_new()` succeeds
 - required builtin features are present
 
-Example:
+Examples:
 
 ```bash
-./build/arm64-release/c-kafka-rdkafka-probe --require ssl,sasl
+./build/arm64-release/c-kafka-rdkafka-probe
+./build/arm64-release/c-kafka-rdkafka-probe --require gzip
 ```
+
+If your ARM64 `librdkafka` was built without `ssl` or `sasl`, do not require those features in the probe command.
 
 ## Detailed Guide
 
-See docs/deployment-guide.md
-See docs/amd64-build-and-deploy.md
+See `docs/arm64-build-and-deploy.md`
+See `docs/librdkafka-arm64-cross-build.md`
+See `docs/amd64-build-and-deploy.md`
   

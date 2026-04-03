@@ -69,7 +69,7 @@ copy_runtime_libraries "${CONSUMER_BIN}"
 copy_runtime_libraries "${PROBE_BIN}"
 
 if [[ -n "${RDKAFKA_ROOT:-}" && -d "${RDKAFKA_ROOT}/lib" ]]; then
-  find "${RDKAFKA_ROOT}/lib" -maxdepth 1 -type f \( -name "librdkafka.so*" -o -name "librdkafka++.so*" \)     -exec cp -L {} "${OUTPUT_DIR}/lib/" \;
+  find "${RDKAFKA_ROOT}/lib" -maxdepth 1 -type f \( -name "librdkafka.so*" \) -exec cp -L {} "${OUTPUT_DIR}/lib/" \;
 fi
 
 cat > "${OUTPUT_DIR}/README-runtime.txt" <<'EOF'
@@ -85,7 +85,7 @@ Manual start:
   ./deploy/device/start.sh
 
 Validate librdkafka on the target:
-  ./bin/c-kafka-rdkafka-probe --require ssl,sasl
+  ./bin/c-kafka-rdkafka-probe
 
 Install as service:
   sudo ./deploy/device/install-service.sh /opt/c-kafka-trace-producer

@@ -77,43 +77,46 @@ if (-not $ToolchainRoot) {
 $ToolchainRoot = Resolve-NormalizedPath -PathValue $ToolchainRoot
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 
-$gxx = Find-ExistingFile @(
-    (Join-Path $ToolchainRoot 'bin\g++.exe'),
-    (Join-Path $ToolchainRoot 'bin\g++')
+$gcc = Find-ExistingFile @(
+    (Join-Path $ToolchainRoot 'bin\gcc.exe'),
+    (Join-Path $ToolchainRoot 'bin\gcc')
 )
 $objdump = Find-ExistingFile @(
     (Join-Path $ToolchainRoot 'bin\objdump.exe'),
     (Join-Path $ToolchainRoot 'bin\objdump')
 )
 $sysroot = Resolve-NormalizedPath -PathValue (Join-Path $ToolchainRoot 'aarch64-none-linux-gnu\libc')
-$cxxIncludeRoot = Resolve-NormalizedPath -PathValue (Join-Path $ToolchainRoot 'aarch64-none-linux-gnu\include\c++\10.3.1')
-$cxxTargetIncludeRoot = Resolve-NormalizedPath -PathValue (Join-Path $cxxIncludeRoot 'aarch64-none-linux-gnu')
-$cxxBackwardIncludeRoot = Resolve-NormalizedPath -PathValue (Join-Path $cxxIncludeRoot 'backward')
+$probeDir = Join-Path $ProjectRoot 'build\toolchain-c-probe'
+$sourcePath = Join-Path $probeDir 'hello.c'
+$binaryPath = Join-Path $probeDir 'hello-aarch64'
+$stdoutPath = Join-Path $probeDir 'compile.stdout.log'
+$stderrPath = Join-Path $probeDir 'compile.stderr.log'
+$objdumpPath = Join-Path $probeDir 'objdump.log'
 
-if (-not $gxx) {
-    throw "Could not find g++ under $ToolchainRoot\bin."
+if (-not $gcc) {
+    throw "Could not find gcc under $ToolchainRoot\bin."
 }
 
 if (-not $objdump) {
     throw "Could not find objdump under $ToolchainRoot\bin."
 }
 
-$stdCppCandidates = Get-ChildItem -Path $ToolchainRoot -Recurse -File -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -match '^libstdc\+\+(\.a|\.so(\.\d+)*)$' }
-
-$probeDir = Join-Path $ProjectRoot 'build\toolchain-probe'
-$sourcePath = Join-Path $probeDir 'hello.cpp'
-$binaryPath = Join-Path $probeDir 'hello-aarch64'
-$stdoutPath = Join-Path $probeDir 'compile.stdout.log'
-$stderrPath = Join-Path $probeDir 'compile.stderr.log'
-$objdumpPath = Join-Path $probeDir 'objdump.log'
-
 New-Item -ItemType Directory -Force -Path $probeDir | Out-Null
 Set-Content -LiteralPath $sourcePath -Encoding Ascii -Value @'
-#include <iostream>
+#include <math.h>
+#include <pthread.h>
+#include <stdio.h>
 
-int main() {
-    std::cout << "toolchain-ok" << std::endl;
+static void* worker(void* opaque) {
+    return opaque;
+}
+
+int main(void) {
+    pthread_t tid;
+    double x = sqrt(16.0);
+    pthread_create(&tid, NULL, worker, NULL);
+    pthread_join(tid, NULL);
+    printf("toolchain-ok %.1f\n", x);
     return 0;
 }
 '@
@@ -122,9 +125,10 @@ $compileArgs = @(
     $sourcePath,
     '-o', $binaryPath,
     "--sysroot=$sysroot",
-    '-isystem', $cxxIncludeRoot,
-    '-isystem', $cxxTargetIncludeRoot,
-    '-isystem', $cxxBackwardIncludeRoot
+    '-lpthread',
+    '-lm',
+    '-ldl',
+    '-lrt'
 )
 
 foreach ($includeDir in $AdditionalIncludeDirs) {
@@ -139,16 +143,11 @@ foreach ($libraryDir in $AdditionalLibraryDirs) {
     }
 }
 
-$compileResult = Invoke-NativeProcess -FilePath $gxx -ArgumentList $compileArgs -StdoutPath $stdoutPath -StderrPath $stderrPath
+$compileResult = Invoke-NativeProcess -FilePath $gcc -ArgumentList $compileArgs -StdoutPath $stdoutPath -StderrPath $stderrPath
 $compileExitCode = $compileResult.ExitCode
 $compileOutput = $compileResult.Output
 
 if ($compileExitCode -ne 0) {
-    if (-not $stdCppCandidates) {
-        Write-Warning "No libstdc++ runtime/library was found under the toolchain root."
-        Write-Warning "This toolchain appears to be incomplete for C++ linking. A full SDK is required."
-    }
-
     if (-not $Quiet) {
         $compileOutput | ForEach-Object { Write-Host $_ }
     }
@@ -159,17 +158,18 @@ ARM64 toolchain probe failed.
 Toolchain root: $ToolchainRoot
 Expected sysroot: $sysroot
 
-If the failure mentions bits/c++config.h or libstdc++, the current toolchain does not provide
-a complete C++ SDK for this project. Replace it with a full aarch64 Linux SDK, or supplement
-the missing include/library directories and pass them via -AdditionalIncludeDirs / -AdditionalLibraryDirs.
+This project now builds as C rather than C++. If the failure mentions -lpthread, -lm,
+or related runtime libraries, add the missing ARM64 library directories via
+-AdditionalLibraryDirs and retry.
 "@
 }
 
 $objdumpResult = Invoke-NativeProcess -FilePath $objdump -ArgumentList @('-f', $binaryPath) -StdoutPath $objdumpPath -StderrPath ($objdumpPath + '.stderr')
 $objdumpExitCode = $objdumpResult.ExitCode
 $objdumpOutput = $objdumpResult.Output
+$objdumpText = ($objdumpOutput -join "`n")
 
-if ($objdumpExitCode -ne 0 -or ($objdumpOutput -notmatch 'architecture:\s+aarch64')) {
+if ($objdumpExitCode -ne 0 -or ($objdumpText -notmatch 'architecture:\s*aarch64')) {
     if (-not $Quiet) {
         $objdumpOutput | ForEach-Object { Write-Host $_ }
     }
@@ -179,7 +179,7 @@ if ($objdumpExitCode -ne 0 -or ($objdumpOutput -notmatch 'architecture:\s+aarch6
 
 if (-not $Quiet) {
     Write-Host "Toolchain probe succeeded."
-    Write-Host "  g++:      $gxx"
+    Write-Host "  gcc:      $gcc"
     Write-Host "  sysroot:  $sysroot"
     Write-Host "  output:   $binaryPath"
     Write-Host "  arch:     aarch64"

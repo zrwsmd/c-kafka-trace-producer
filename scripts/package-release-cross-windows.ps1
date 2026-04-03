@@ -220,7 +220,7 @@ Manual start:
   ./deploy/device/start.sh
 
 Validate librdkafka on the target:
-  ./bin/c-kafka-rdkafka-probe --require ssl,sasl
+  ./bin/c-kafka-rdkafka-probe
 
 Install as service:
   sudo ./deploy/device/install-service.sh /opt/c-kafka-trace-producer

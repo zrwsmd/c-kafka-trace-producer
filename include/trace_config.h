@@ -1,35 +1,37 @@
-
 #pragma once
 
-#include <cstdint>
-#include <string>
+#include <stdint.h>
 
-namespace trace {
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-struct TraceConfig {
-  std::string bootstrap_servers = "47.129.128.147:9092";
-  std::string topic = "trace-data";
+typedef struct TraceConfig {
+  char bootstrap_servers[256];
+  char topic[128];
 
-  int period_ms = 1;
-  int batch_size = 1000;
-  std::int64_t max_frames = 1000000;
-  std::int64_t send_interval_ms = 100;
-  std::string task_id = "trace_001";
+  int period_ms;
+  int batch_size;
+  int64_t max_frames;
+  int64_t send_interval_ms;
+  char task_id[128];
 
-  std::string acks = "all";
-  int retries = 5;
-  bool enable_idempotence = true;
-  std::string compression_type = "none";
-  int batch_size_bytes = 65536;
-  int linger_ms = 10;
-  int buffer_memory = 67108864;
-  int request_timeout_ms = 60000;
-  int message_timeout_ms = 120000;
+  char acks[32];
+  int retries;
+  int enable_idempotence;
+  char compression_type[32];
+  int batch_size_bytes;
+  int linger_ms;
+  int buffer_memory;
+  int request_timeout_ms;
+  int message_timeout_ms;
+} TraceConfig;
 
-  static TraceConfig load(const std::string& path);
-  std::int64_t estimateBatches() const;
-  void dump() const;
-};
+void trace_config_init(TraceConfig* config);
+int trace_config_load(const char* path, TraceConfig* config);
+int64_t trace_config_estimate_batches(const TraceConfig* config);
+void trace_config_dump(const TraceConfig* config);
 
-}  // namespace trace
-  
+#ifdef __cplusplus
+}
+#endif
